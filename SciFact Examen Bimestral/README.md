@@ -30,24 +30,50 @@ Estos paquetes ayudan a validar certificados HTTPS usando las autoridades de con
 
 > **Nota sobre PowerShell:** `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` fue mencionado durante las pruebas para permitir ejecutar scripts de activación de un entorno virtual. **Aquí no hace falta**, porque el proyecto se ejecuta sin entorno virtual. No sirve para corregir certificados HTTPS.
 
-## Probar con Postman
+### Servicio web público y pruebas con Postman
 
-Usa `https://scifact-buscador.onrender.com` para probar el despliegue, o `http://127.0.0.1:8000` si lo ejecutas localmente.
+La API REST de SciFact está desplegada en Render y puede utilizarse desde cualquier equipo con acceso a internet, sin necesidad de instalar Python ni descargar el corpus.
 
-1. **Estado del servicio:** crea una petición **GET** a `/health` y pulsa **Send**. Debe responder con `status: "ok"` y `documents: 5183`.
-2. **Búsqueda:** crea una petición **POST** a `/search`. En **Body → raw → JSON**, pega:
+**URL pública:**  
+https://scifact-buscador.onrender.com
 
-   ```json
-   {
-     "query": "Does vitamin D reduce respiratory infections?",
-     "model": "bm25",
-     "top_k": 5
-   }
-   ```
+**Importante:** al abrir la URL principal en un navegador, aparecerá `{"detail":"Not Found"}`. Esto es normal, ya que el proyecto no dispone de una interfaz gráfica y la ruta principal (`/`) no está definida. El servicio se utiliza mediante peticiones HTTP desde **Postman**.
 
-3. Pulsa **Send**: debe devolver `200 OK` y una lista `results` con `rank`, `document_id`, `score`, `title` y `snippet`. Repite cambiando `"model": "tfidf"` para probar el otro modelo. `top_k` permite valores de 1 a 100.
+#### Endpoints disponibles
 
-**Endpoints:** `GET /health` y `POST /search`. La raíz `/`, `/docs` y `/openapi.json` devuelven 404 deliberadamente: **el profesor utilizará Postman, no una interfaz web**. En Render Free, una primera petición tras inactividad puede demorarse mientras se reactiva el servicio.
+**1. Verificar el estado del servicio**
+
+- Método: `GET`
+- URL: `https://scifact-buscador.onrender.com/health`
+- Respuesta esperada:
+
+```json
+{
+  "status": "ok",
+  "corpus": "scifact",
+  "documents": 5183
+}
+```
+
+**2. Realizar búsquedas de documentos**
+
+- Método: `POST`
+- URL: `https://scifact-buscador.onrender.com/search`
+- En Postman, seleccionar **Body → raw → JSON** e ingresar:
+
+```json
+{
+  "query": "Does vitamin D reduce respiratory infections?",
+  "model": "bm25",
+  "top_k": 5
+}
+```
+
+El parámetro `model` permite seleccionar `"bm25"` o `"tfidf"`, mientras que `top_k` determina la cantidad de documentos recuperados.
+
+Al presionar **Send**, el servidor devolverá una respuesta JSON con los documentos encontrados, ordenados por relevancia, incluyendo su identificador, puntuación, título y fragmento de contenido.
+
+**Nota:** el servicio utiliza el plan gratuito de Render, por lo que puede entrar en reposo después de un período de inactividad. La primera solicitud podría tardar en responder mientras el servidor se reactiva.
 
 ## Notebook y comprobación
 
