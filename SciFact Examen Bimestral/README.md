@@ -1,83 +1,72 @@
-# SciFact — Examen ICCD753 Recuperación de Información
+# SciFact — Recuperación de Información
 
-Buscador sobre **documentos completos** del corpus SciFact (5.183 documentos en la ejecución comprobada), con identificadores originales, tokenización/stopwords/Porter stemming, vocabulario, índice invertido con frecuencias, TF-IDF + similitud coseno y BM25. Incluye API FastAPI y notebook ejecutado con evaluación de la partición `test` de SciFact.
+API REST **sin interfaz web** para buscar artículos del corpus SciFact mediante **BM25** o **TF-IDF (coseno)**. Utiliza los 5.183 documentos de BEIR SciFact con sus IDs originales, preprocesamiento (stopwords y stemming Porter) e índice invertido. El corpus **se descarga automáticamente al iniciar**
 
-## Archivos
+**API publicada:** `https://scifact-buscador.onrender.com`  
+**Revisión:** exclusivamente mediante **Postman** (no hay página de inicio ni Swagger).
 
-- `engine.py`: descarga del corpus SciFact de BEIR, indexación, modelos y evaluación.
-- `main.py`: API HTTP sin interfaz web; consumible desde Postman.
-- `Evaluacion_SciFact.ipynb`: análisis, pruebas y métricas del conjunto `test`.
-- `test_project.py`: pruebas automáticas con corpus pequeño **sintético** y sin Internet.
-- `requirements.txt` y `render.yaml`: dependencias y despliegue.
+## Ejecutar en Windows (VS Code / PowerShell)
 
-## Ejecutar en Windows (sin entorno virtual)
+1. Instala Python 3.12 y abre en VS Code la carpeta que contiene `main.py`, `engine.py` y `requirements.txt`.
+2. En la terminal de esa carpeta, instala dependencias e inicia el servidor:
 
-En PowerShell, dentro de la carpeta donde están `main.py` y `engine.py`:
+   ```powershell
+   python --version
+   python -m pip install -r requirements.txt
+   python -m uvicorn main:app --reload
+   ```
+
+3. Deja abierta la terminal. En el primer arranque, Python descarga SciFact y crea los índices. Cuando aparezca `Application startup complete`, la API local estará en `http://127.0.0.1:8000`.
+
+**Si aparece `SSL: CERTIFICATE_VERIFY_FAILED` durante la descarga:** detén el servidor (`Ctrl+C`) y ejecuta:
 
 ```powershell
-python --version
-python -m pip install -r requirements.txt
+python -m pip install --upgrade certifi
+python -m pip install pip-system-certs
 python -m uvicorn main:app --reload
 ```
 
-Verifique `http://127.0.0.1:8000/health` (GET). Las rutas `/`, `/docs` y `/openapi.json` están deshabilitadas deliberadamente porque la revisión se realiza exclusivamente vía Postman.
+Estos paquetes ayudan a validar certificados HTTPS usando las autoridades de confianza del sistema; **no desactivan la seguridad SSL**. Si persiste el error, revisa la red o certificados del equipo; no uses `verify=False`.
 
-### Prueba de búsqueda (Postman)
+> **Nota sobre PowerShell:** `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` fue mencionado durante las pruebas para permitir ejecutar scripts de activación de un entorno virtual. **Aquí no hace falta**, porque el proyecto se ejecuta sin entorno virtual. No sirve para corregir certificados HTTPS.
 
-- Método: `POST`
-- URL: `http://127.0.0.1:8000/search`
-- Cabecera: `Content-Type: application/json`
-- Cuerpo:
+## Probar con Postman
 
-```json
-{"query":"Does vitamin D reduce respiratory infections?","model":"bm25","top_k":5}
-```
+Usa `https://scifact-buscador.onrender.com` para probar el despliegue, o `http://127.0.0.1:8000` si lo ejecutas localmente.
 
-Cambie `model` a `tfidf`. Se devuelven `rank`, `document_id` original, `score`, `title` y `snippet`. Si no hay coincidencias se devuelve `results: []`. Las consultas no están precargadas: se aceptan consultas arbitrarias. `top_k` admite enteros del 1 al 100.
+1. **Estado del servicio:** crea una petición **GET** a `/health` y pulsa **Send**. Debe responder con `status: "ok"` y `documents: 5183`.
+2. **Búsqueda:** crea una petición **POST** a `/search`. En **Body → raw → JSON**, pega:
 
-## Descarga automática y reproducción
+   ```json
+   {
+     "query": "Does vitamin D reduce respiratory infections?",
+     "model": "bm25",
+     "top_k": 5
+   }
+   ```
 
-Al iniciar, si no están `data/scifact/corpus.jsonl`, `data/scifact/queries.jsonl` y `data/scifact/qrels/test.tsv`, se descarga automáticamente desde **BEIR SciFact** por HTTPS con certificados válidos y se extrae a `data/scifact/`. No hace falta descargarlo manualmente. El ZIP se guarda en `data/scifact.zip` como caché local. La descarga exige conexión y acceso HTTPS al servidor de BEIR. Si un ZIP está dañado, el programa informa del error: elimine `data/scifact.zip` para repetir la descarga.
+3. Pulsa **Send**: debe devolver `200 OK` y una lista `results` con `rank`, `document_id`, `score`, `title` y `snippet`. Repite cambiando `"model": "tfidf"` para probar el otro modelo. `top_k` permite valores de 1 a 100.
 
-El dataset es SciFact distribuido por BEIR, equivalente al corpus asignado en la consigna con enlaces a Hugging Face; se respetan `_id` y qrels originales. Los documentos no se dividen en fragmentos.
+**Endpoints:** `GET /health` y `POST /search`. La raíz `/`, `/docs` y `/openapi.json` devuelven 404 deliberadamente: **el profesor utilizará Postman, no una interfaz web**. En Render Free, una primera petición tras inactividad puede demorarse mientras se reactiva el servicio.
 
-**Preprocesamiento reproducible:** minúsculas, expresión regular `[a-z]+`, eliminación de stopwords en inglés de scikit-learn y stemming Porter. Se ignoran números y símbolos: es una limitación para textos científicos. **Modelos:** TF-IDF IDF suavizado con normalización L2 y coseno; BM25 con `k1=1.5`, `b=0.75`, IDF no negativa de Robertson/Sparck Jones modificada. BM25 recorre el índice invertido término → (documento, frecuencia); TF-IDF opera sobre una matriz dispersa formada a partir de las mismas frecuencias.
+## Notebook y comprobación
 
-### Notebook
+Abre `Evaluacion_SciFact.ipynb` en VS Code, selecciona el **mismo Python** que usas para la API y ejecuta **Run All**. Si necesita un kernel: `python -m pip install ipykernel`. Evalúa 300 consultas `test` con los qrels de SciFact.
 
-Abra `Evaluacion_SciFact.ipynb` desde la carpeta del proyecto en VS Code, seleccione el **mismo Python** que ejecuta la API y use **Run All**. Si VS Code pide un kernel, instale `python -m pip install ipykernel`. El archivo incluido conserva las salidas reales compartidas por el estudiante para las celdas principales; la nueva celda de consistencia queda **sin ejecutar** hasta que se vuelva a correr el notebook. Guarde de nuevo antes de entregar para que cada celda tenga su salida.
+| Métrica @10 | TF-IDF | BM25 |
+|---|---:|---:|
+| Precision | 0.082667 | 0.092333 |
+| Recall | 0.755889 | 0.838667 |
+| NDCG | 0.597829 | 0.691850 |
 
-Resultados de la ejecución entregada sobre 300 consultas test con qrels:
+Son los valores obtenidos en la ejecución entregada. Para ejecutar las pruebas unitarias del código: `python -m pip install pytest httpx` y luego `python -m pytest -q test_project.py`.
 
-| Métrica | TF-IDF | BM25 |
-|:--|--:|--:|
-| Precision@10 | 0.082667 | 0.092333 |
-| Recall@10 | 0.755889 | 0.838667 |
-| NDCG@10 | 0.597829 | 0.691850 |
+## Archivos y despliegue
 
-La interpretación ampliada está dentro del notebook. Estos valores provienen de la ejecución adjunta del estudiante; **no se recalcularon aquí sobre el corpus completo**. Las correcciones preservan el preprocesamiento y las fórmulas de puntuación, pero deben verificarse con una nueva ejecución local.
+- `engine.py`: descarga, procesamiento, indexación, modelos y evaluación.
+- `main.py`: API HTTP para Postman.
+- `Evaluacion_SciFact.ipynb`: resultados y análisis.
+- `test_project.py`: pruebas unitarias con corpus sintético.
+- `requirements.txt`: dependencias; `render.yaml`: configuración de Render.
 
-### Pruebas automatizadas sin descargar SciFact
-
-```powershell
-python -m pip install pytest httpx
-python -m pytest -q test_project.py
-```
-
-La prueba debe indicar `7 passed`. Emplea un corpus sintético reducido y revisa índice, rankings, parámetros, fórmulas BM25, evaluación y API. No reemplaza la evaluación real con los 300 qrels.
-
-## Publicación en Render
-
-1. Cree un repositorio GitHub con `engine.py`, `main.py`, `requirements.txt`, `render.yaml`, notebook, pruebas y este README. No suba `data/` (ver `.gitignore`).
-2. En [Render](https://dashboard.render.com/) seleccione **New → Blueprint** y conecte el repositorio, o cree un Web Service con `pip install -r requirements.txt` y `uvicorn main:app --host 0.0.0.0 --port $PORT`.
-3. Observe los logs: el primer arranque descarga SciFact y construye índices; necesitará recursos y memoria suficientes. El plan gratuito **no garantiza** que funcione sin límites de memoria/tiempo ni que esté siempre despierto. Si falla, revise Logs y ajuste el plan o el despliegue.
-4. Compruebe públicamente `https://SU-SERVICIO.onrender.com/health`  y una solicitud `POST /search` desde una red externa.
-5. Envíe al docente la URL real verificada. **La entrega exige que esté accesible durante el periodo de revisión**.
-
-## Limitaciones y trazabilidad
-
-Los juicios de relevancia disponibles determinan la evaluación: documentos sin qrel se consideran no relevantes para las métricas, lo cual no equivale a una revisión humana exhaustiva. Las calificaciones positivas se consideran relevantes en Precision/Recall y las calificaciones originales se emplean en NDCG. Se promedian métricas por consulta (macro) y se consideran solo consultas `test` con qrels. Los índices se reconstruyen al reiniciar; no se guardan archivos pickle. No incluye una interfaz adicional de búsqueda: los endpoints se consultan desde Postman, sin frontend ni Swagger. La URL pública no se ha desplegado ni validado aún.
-
-## Verificación sin interfaz web
-
-La aplicación expone solamente `GET /health` y `POST /search`. La ruta raíz, Swagger (`/docs`), ReDoc y OpenAPI JSON están deshabilitados para cumplir la revisión exclusiva desde Postman. El servicio sigue siendo HTTP accesible públicamente; el término **Web Service** de Render no implica tener un frontend.
+El despliegue se realiza desde GitHub con **Render → New → Blueprint**, apuntando a `render.yaml`. Si los archivos están en la subcarpeta `SciFact Examen Bimestral`, el servicio debe tener `rootDir: "SciFact Examen Bimestral"`. Fija Python 3.12 mediante `PYTHON_VERSION` (la publicación verificada utilizó `3.12.9`). 
